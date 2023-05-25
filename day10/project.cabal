@@ -38,3 +38,16 @@ executable reinforce
                        , CartPole
   ghc-options:         -fno-warn-partial-type-signatures -O2
 
+
+executable ppo
+  import:              config
+  build-depends:       pipes >= 4.3.16
+                       , data-default-class >= 0.1.2.0
+                       , libtorch-ffi
+                       , random
+  hs-source-dirs:      .
+  main-is:             Ppo.hs
+  other-modules:       Lib
+                       , CartPole
+  ghc-options:         -fno-warn-partial-type-signatures -O2
+
