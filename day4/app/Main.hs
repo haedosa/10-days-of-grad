@@ -2,11 +2,11 @@
 
 -- | = Batch normalization demo
 
-import           Data.Massiv.Array       hiding ( map
+import           Data.Massiv.Array       hiding (Matrix, Vector, map
                                                 , zip
                                                 , unzip
                                                 )
-import qualified Data.Massiv.Array             as A
+import qualified Data.Massiv.Array             as A hiding (Matrix, Vector)
 import qualified Data.Massiv.Array.Manifest.Vector
                                                as A
 import           Streamly

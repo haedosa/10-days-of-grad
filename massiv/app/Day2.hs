@@ -2,7 +2,7 @@
 
 -- | = Day 2 reimplementation in Massiv
 
-import           Data.Massiv.Array as A
+import           Data.Massiv.Array as A hiding (Matrix)
 
 import           Text.Printf ( printf )
 
@@ -20,10 +20,10 @@ makeCircles m factor noiseLevel = do
   r2 <- rand' m2 :: IO (Matrix Float)
   ns <- rand (-noiseLevel / 2, noiseLevel / 2) (Sz (m :. 2)) :: IO (Matrix Float)
 
-  let outerX = compute $ cosA r1 :: Matrix Float
-      outerY = compute $ sinA r1 :: Matrix Float
-      innerX = scale factor $ compute $ cosA r2 :: Matrix Float
-      innerY = scale factor $ compute $ sinA r2 :: Matrix Float
+  let outerX = compute $ A.map cos r1 :: Matrix Float
+      outerY = compute $ A.map sin r1 :: Matrix Float
+      innerX = scale factor $ compute $ A.map cos r2 :: Matrix Float
+      innerY = scale factor $ compute $ A.map sin r2 :: Matrix Float
 
   -- Merge them all
   let x1 = compute $ append' 1 outerX outerY :: Matrix Float
@@ -33,7 +33,7 @@ makeCircles m factor noiseLevel = do
       y2 = (A.replicate Par (Sz2 m2 1) 1) :: Matrix Float
       y = append' 2 y1 y2
 
-  return (compute $ x .+ ns, compute y)
+  return (compute $ x !+! ns, compute y)
 
 
 main :: IO ()

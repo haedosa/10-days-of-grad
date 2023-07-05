@@ -18,7 +18,7 @@ library
   -- other-modules:
 
   build-depends:
-        base                    >= 4.7 && < 4.13
+        base
       , massiv
       , mwc-random
       , random
@@ -36,7 +36,7 @@ executable day1
     -rtsopts
   default-language:    Haskell2010
   build-depends:
-        base                    >= 4.7  && < 4.13
+        base
       , bytestring
       , massiv
       , massiv-nn
@@ -52,7 +52,7 @@ executable day2
     -rtsopts
   default-language:    Haskell2010
   build-depends:
-        base                    >= 4.7  && < 4.13
+        base
       , bytestring
       , massiv
       , massiv-nn

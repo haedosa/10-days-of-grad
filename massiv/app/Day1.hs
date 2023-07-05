@@ -1,10 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE BangPatterns #-}
 
 -- | = Day 1 reimplementation in Massiv
 
-import           Data.Massiv.Array as A
+import           Data.Massiv.Array as A hiding (Matrix)
 
-import           Data.Massiv.Array.Numeric ( (|*|) )
+import           Data.Massiv.Array.Numeric ( (.><.) )
 -- Benchmark
 import           Data.Time
 
@@ -16,7 +17,7 @@ linear' :: Matrix Float
         -> Matrix Float
 linear' x dy =
   let trX = compute $ transpose x
-      prod = trX |*| dy
+      prod = trX !><! dy
       k = recip $ fromIntegral (rows x)
   in k `scale` prod
 
@@ -24,7 +25,7 @@ loss :: Matrix Float
      -> Matrix Float
      -> Float
 loss y tgt =
-  let diff = compute $ y .- tgt :: Matrix Float
+  let diff = compute $ y !-! tgt :: Matrix Float
       ar = compute $ diff .^ 2 :: Matrix Float
   in A.sum ar
 
@@ -32,7 +33,7 @@ loss' :: Matrix Float
       -> Matrix Float
       -> Matrix Float
 loss' y tgt =
-  let diff = compute $ y .- tgt
+  let diff = compute $ y !-! tgt
   in 2.0 `scale` diff
 
 grad :: (Matrix Float, Matrix Float)
@@ -48,7 +49,7 @@ forward :: Matrix Float
         -> Matrix Float
         -> [Matrix Float]
 forward x w1 =
-  let h = x |*| w1
+  let h = x !><! w1
       y = sigmoid h
   in [h, y]
 
@@ -63,7 +64,7 @@ descend lr n w0 dta = iterN n step w0
   where
     step w =
       let dW1 = grad dta w
-      in compute $ w .- (lr `scale` dW1)
+      in compute $ w !-! (lr `scale` dW1)
 
 -- | Benchmarking matrix multiplication.
 -- Run program with `+RTS -N` flags
@@ -75,7 +76,7 @@ bench = do
   -- let b' = setComp Par b
 
   start <- getCurrentTime
-  let !c = a |*| b
+  let !c = a !><! b
   end <- getCurrentTime
 
   let strat = getComp c

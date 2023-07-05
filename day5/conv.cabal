@@ -29,9 +29,9 @@ library
       MonadRandom
     , array
     , backprop
-    , base >=4.7 && <4.13
+    , base
     , deepseq
-    , massiv >=0.4.5.0 && <0.5
+    , massiv
     , microlens
     , microlens-th
     , mwc-random
@@ -51,10 +51,10 @@ executable conv
       MonadRandom
     , array
     , backprop
-    , base >=4.7 && <4.13
+    , base
     , conv
     , deepseq
-    , massiv >=0.4.5.0 && <0.5
+    , massiv
     , massiv-io
     , microlens
     , microlens-th
@@ -78,11 +78,11 @@ benchmark default
       MonadRandom
     , array
     , backprop
-    , base >=4.7 && <4.13
+    , base
     , conv
     , criterion
     , deepseq
-    , massiv >=0.4.5.0 && <0.5
+    , massiv
     , microlens
     , microlens-th
     , mwc-random

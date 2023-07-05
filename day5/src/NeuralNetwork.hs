@@ -65,7 +65,7 @@ import           Control.Applicative ( liftA2 )
 import           Control.DeepSeq ( NFData )
 import           Control.Monad ( foldM )
 import           Data.List ( foldl', maximumBy )
-import           Data.Massiv.Array hiding ( map, zip, zipWith, flatten )
+import           Data.Massiv.Array hiding (Matrix, Vector, map, zip, zipWith, flatten )
 import qualified Data.Massiv.Array as A
 import           Data.Ord
 import           GHC.Generics ( Generic )
@@ -79,6 +79,7 @@ import qualified Streamly.Prelude as S
 import qualified System.Random.MWC as MWC
 import           System.Random.MWC ( createSystemRandom )
 import           System.Random.MWC.Distributions ( standard )
+import Control.Exception (throw)
 
 -- Note that images are volumes of channels x width x height, whereas
 -- mini-batches are volumes-4 of batch size x channels x width x height.
@@ -313,7 +314,7 @@ _conv2d'' (Padding (Sz szp1) (Sz szp2) pb) dz x = res
     pad3 = Padding (Sz (0 :> szp1)) (Sz (0 :> szp2)) pb
     base0 = applyStencil pad3 (sten 0) x
 
-    Sz szW0 = size base0
+    Sz szW0 = undefined -- size base0
     szW = Sz (1 :> szW0)
     rsz = resize' szW. computeAs U
 
@@ -352,7 +353,7 @@ linear :: Reifies s W
        -> BVar s (Matrix Float)
        -> BVar s (Matrix Float)
 linear = liftOp2. op2 $ \(Linear w b) x ->
-  let prod = maybe (error $ "Dimension mismatch " ++ show (size x, size w)) id (x |*| w)
+  let prod = maybe (error $ "Dimension mismatch " ++ show (size x, size w)) id (x .><. w)
       lin = maybe (error "Dimension mismatch") compute (delay prod .+. (b `rowsLike` x))
   in (lin, \dZ -> let dW = linearW' x dZ
                       dB = bias' dZ
@@ -391,7 +392,10 @@ sigmoid = liftOp1. op1 $ \x ->
     f x = recip $ 1.0 + exp (-x)
 
 maxpoolStencil2x2 :: Stencil Ix4 Float Float
-maxpoolStencil2x2 = makeStencil (Sz4 1 1 2 2) 0 $ \ get -> let max4 x1 x2 x3 x4 = max (max (max x1 x2) x3) x4 in max4 <$> get (0 :> 0 :> 0 :. 0) <*> get (0 :> 0 :> 1 :. 1) <*> get (0 :> 0 :> 0 :. 1) <*> get (0 :> 0 :> 1 :. 0)
+maxpoolStencil2x2 = makeStencil (Sz4 1 1 2 2) 0 $ \ get ->
+  let max4 x1 x2 x3 = max (max (max x1 x2) x3)
+  -- in max4 <$> get (0 :> 0 :> 0 :. 0) <*> get (0 :> 0 :> 1 :. 1) <*> get (0 :> 0 :> 0 :. 1) <*> get (0 :> 0 :> 1 :. 0)
+  in max4 (get (0 :> 0 :> 0 :. 0)) (get (0 :> 0 :> 1 :. 1)) (get (0 :> 0 :> 0 :. 1)) (get (0 :> 0 :> 1 :. 0))
 
 maxpool_ :: Volume4 Float -> Volume4 Float
 maxpool_ = computeWithStride (Stride (1 :> 1 :> 2 :. 2)). applyStencil noPadding maxpoolStencil2x2
@@ -473,7 +477,7 @@ data Phase = Train | Eval deriving (Show, Eq)
 
 -- | Uniformly-distributed random numbers Array
 rand
-  :: (Mutable r ix e, MWC.Variate e) =>
+  :: (Manifest r e, Index ix, MWC.Variate e) =>
      (e, e) -> Sz ix -> IO (Array r ix e)
 rand rng sz = do
     gens <- initWorkerStates Par (const createSystemRandom)
@@ -496,7 +500,7 @@ cols m =
   let (_ :. c) = unSz $ size m
   in c
 
-computeMap :: (Source r2 ix e', Mutable r1 ix e) =>
+computeMap :: (Source r2 e', Manifest r1 e, Index ix) =>
   (e' -> e) -> Array r2 ix e' -> Array r1 ix e
 computeMap f = A.compute. A.map f
 {-# INLINE computeMap #-}
@@ -506,14 +510,14 @@ linearW' :: Matrix Float
         -> Matrix Float
 linearW' x dy =
   let trX = compute $ transpose x :: Matrix Float
-      prod = maybe (error "Inconsistent dimensions in linearW'") id (trX |*| dy)
+      prod = maybe (error "Inconsistent dimensions in linearW'") id (trX .><. dy)
       m = recip $ fromIntegral (rows x)
   in compute $ m *. delay prod
 
 linearX' :: Matrix Float
         -> Matrix Float
         -> Matrix Float
-linearX' w dy = maybe (error "Inconsistent dimensions in linearX'") compute (dy `multiplyTransposed` w)
+linearX' w dy = maybe (error "Inconsistent dimensions in linearX'") compute (dy `multiplyMatricesTransposed` w)
 
 -- | Bias gradient
 bias' :: Matrix Float -> Vector Float
@@ -551,24 +555,42 @@ crossEntropyLoss x targ n = _ce y
 {-# INLINE crossEntropyLoss #-}
 
 -- | Broadcast a vector in Dim2
-rowsLike :: Manifest r Ix1 Float
-         => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
+-- rowsLike :: Manifest r Ix1 Float
+--          => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
+-- rowsLike v m = br (Sz (rows m)) v
+
+-- -- | Broadcast a vector in Dim1
+-- colsLike :: Manifest r Ix1 Float
+--          => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
+-- colsLike v m = br1 (Sz (cols m)) v
+
+-- -- | Broadcast by the given number of rows
+-- br :: Manifest r Ix1 Float
+--    => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
+-- br rows' = expandWithin Dim2 rows' const
+
+-- -- | Broadcast by the given number of cols
+-- br1 :: Manifest r Ix1 Float
+--    => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
+-- br1 rows' = expandWithin Dim1 rows' const
+
+
+-- | Broadcast a vector in Dim2
+rowsLike :: Manifest r Float => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
 rowsLike v m = br (Sz (rows m)) v
 
 -- | Broadcast a vector in Dim1
-colsLike :: Manifest r Ix1 Float
-         => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
+colsLike :: Manifest r Float => Array r Ix1 Float -> Matrix Float -> Array D Ix2 Float
 colsLike v m = br1 (Sz (cols m)) v
 
 -- | Broadcast by the given number of rows
-br :: Manifest r Ix1 Float
-   => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
+br :: Manifest r Float => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
 br rows' = expandWithin Dim2 rows' const
 
 -- | Broadcast by the given number of cols
-br1 :: Manifest r Ix1 Float
-   => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
+br1 :: Manifest r Float => Sz1 -> Array r Ix1 Float -> Array D Ix2 Float
 br1 rows' = expandWithin Dim1 rows' const
+
 
 -- | Stochastic gradient descent
 sgd :: Monad m
@@ -707,7 +729,7 @@ avgAccuracy net stream = s // len
     (//) = liftA2 (/)
 
 -- | Sum values in each column and produce a delayed 1D Array
-sumRows_ :: Source r Ix2 Float => Array r Ix2 Float -> Array D Ix1 Float
+sumRows_ :: Source r Float => Array r Ix2 Float -> Array D Ix1 Float
 sumRows_ = A.foldlWithin Dim2 (+) 0.0
 
 sumRows :: Reifies s W
@@ -717,7 +739,7 @@ sumRows = liftOp1. op1 $ \x ->
   (compute $ sumRows_ x, \dY -> compute $ dY `rowsLike` x)
 
 -- | Sum values in each row and produce a delayed 1D Array
-sumCols_ :: Source r Ix2 Float => Array r Ix2 Float -> Array D Ix1 Float
+sumCols_ :: Source r Float => Array r Ix2 Float -> Array D Ix1 Float
 sumCols_ = A.foldlWithin Dim1 (+) 0.0
 
 sumCols :: Reifies s W

@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-import           Data.Massiv.Array       hiding ( map
+import           Data.Massiv.Array       hiding (Matrix, Vector, map
                                                 , zip
                                                 , unzip
                                                 )
-import qualified Data.Massiv.Array             as A
+import qualified Data.Massiv.Array             as A hiding (Matrix, Vector)
 import qualified Data.Massiv.Array.Manifest.Vector
                                                as A
 import           Streamly
@@ -16,7 +16,7 @@ import           Data.IDX
 import qualified Data.Vector.Unboxed           as V
 import           Data.List.Split                ( chunksOf )
 
-import           NeuralNetwork
+import           NeuralNetwork hiding (_lr)
 import           Shuffle                        ( shuffleIO )
 
 loadMNIST :: FilePath -> FilePath -> IO (Maybe [(Matrix Float, Matrix Float)])

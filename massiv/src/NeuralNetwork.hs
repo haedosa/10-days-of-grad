@@ -42,8 +42,9 @@ import qualified System.Random as R
 import           System.Random.MWC ( createSystemRandom )
 import           System.Random.MWC.Distributions ( standard )
 
-import           Data.Massiv.Array hiding ( map, zip, zipWith )
+import           Data.Massiv.Array hiding ( Matrix, Vector, map, zip, zipWith )
 import qualified Data.Massiv.Array as A
+import Data.Maybe (fromMaybe)
 
 type MatrixPrim r a = Array r Ix2 a
 type Matrix a = Array U Ix2 a
@@ -99,7 +100,7 @@ sigmoid' x dY =
   let sz = size x
       ones = A.replicate Par sz 1.0 :: Matrix Float
       y = sigmoid x
-  in compute $ dY .* y .* (ones .- y)
+  in compute $ dY !*! y !*! (ones !-! y)
 
 relu :: Matrix Float -> Matrix Float
 relu = computeMap f
@@ -118,9 +119,9 @@ relu' x = compute. A.zipWith f x
                   else dy0
 
 randomishArray
-  :: (Mutable r ix e, R.RandomGen a, R.Random e) =>
+  :: (Manifest r e, Index ix, R.RandomGen a, R.Random e) =>
      (e, e) -> a -> Sz ix -> Array r ix e
-randomishArray range g sz = compute $ unfoldlS_ Seq sz rand g
+randomishArray range g sz = compute $ unfoldlS_ sz rand g
   where
     rand g =
       let (a, g') = R.randomR range g
@@ -128,7 +129,7 @@ randomishArray range g sz = compute $ unfoldlS_ Seq sz rand g
 
 -- | Uniformly-distributed random numbers Array
 rand
-  :: (R.Random e, Mutable r ix e) =>
+  :: (R.Random e, Manifest r e, Index ix) =>
      (e, e) -> Sz ix -> IO (Array r ix e)
 rand range sz = do
   g <- R.newStdGen
@@ -136,7 +137,7 @@ rand range sz = do
 
 -- | Random values from the Normal distribution
 randn
-  :: (Fractional e, Index ix, Resize r Ix1, Mutable r Ix1 e)
+  :: (Fractional e, Index ix, Manifest r e)
   => Sz ix -> IO (Array r ix e)
 randn sz = do
     g <- createSystemRandom
@@ -169,14 +170,14 @@ linearW' :: Matrix Float
         -> Matrix Float
 linearW' x dy =
   let trX = compute $ transpose x
-      prod = trX |*| dy
+      prod = fromMaybe (error "linearW': Out of bounds") (trX .><. dy)
       k = recip $ fromIntegral (rows x)
   in k `scale` prod
 
 linearX' :: Matrix Float
         -> Matrix Float
         -> Matrix Float
-linearX' w dy = compute $ dy `multiplyTransposed` w
+linearX' w dy = compute $ fromMaybe (error "linearX': Out of bounds") (dy `multiplyMatricesTransposed` w)
 
 -- | Bias gradient
 bias' :: Matrix Float -> Vector Float
@@ -215,12 +216,12 @@ pass net (x, tgt) = (pred, grads)
         pred = sigmoid inp
         -- Gradient of cross-entropy loss
         -- after sigmoid activation.
-        loss' = compute $ pred .- tgt
+        loss' = compute $ pred !-! tgt
 
     _pass inp (Layer w b sact:layers) = (dX, pred, Gradients dW dB:t)
       where
-        bBroadcasted = expandWithin Dim2 (rows inp) (\e _ -> e) b
-        lin = compute $ (inp |*| w) .+ bBroadcasted
+        bBroadcasted = expandWithin Dim2 (Sz1 $ rows inp) const b
+        lin = compute $ delay (fromMaybe (error "lin1: Out of bounds") (inp .><. w)) !+! bBroadcasted
         y = getActivation sact lin
 
         (dZ, pred, t) = _pass y layers
@@ -229,6 +230,7 @@ pass net (x, tgt) = (pred, grads)
         dW = linearW' inp dY
         dB = bias' dY
         dX = linearX' w dY
+
 
 optimize
   :: Float
@@ -252,7 +254,7 @@ optimize lr n net0 dataSet = iterN n step net0
       -> Layer Float
     f (Layer w b act) (Gradients dW dB) =
       -- Layer (compute $ w .- (A.map (lr *) dW)) (compute $ b .- (A.map (lr *) dB)) act
-      Layer (compute $ w .- lr `_scale` dW) (compute $ b .- lr `_scale` dB) act
+      Layer (compute $ delay w !-! lr `_scale` dW) (compute $ delay b !-! lr `_scale` dB) act
 
 -- | Strict left fold
 iterN :: Int -> (a -> a) -> a -> a
@@ -315,8 +317,8 @@ _adam p@AdamParameters { _lr = lr
           -> (Matrix Float, Vector Float)
           -> Layer Float
         f (Layer w_ b_ sf) (vW, vB) (sW, sB) =
-           Layer (compute $ w_ .- lr `_scale` vW ./ ((A.map sqrt sW) `addC` epsilon))
-                 (compute $ b_ .- lr `_scale` vB ./ ((A.map sqrt sB) `addC` epsilon))
+           Layer (compute $ delay w_ !-! lr `_scale` vW !/! (A.map sqrt sW `addC` epsilon))
+                 (compute $ delay b_ !-! lr `_scale` vB !/! (A.map sqrt sB `addC` epsilon))
                  sf
 
         addC m c = A.map (c +) m
@@ -325,15 +327,15 @@ _adam p@AdamParameters { _lr = lr
            -> Gradients Float
            -> (Matrix Float, Vector Float)
         f2 (sW, sB) (Gradients dW dB) =
-          ( compute $ beta2 `_scale` sW .+ (1 - beta2) `_scale` (dW.^2)
-          , compute $ beta2 `_scale` sB .+ (1 - beta2) `_scale` (dB.^2))
+          ( compute $ beta2 `_scale` sW !+! (1 - beta2) `_scale` (dW.^2)
+          , compute $ beta2 `_scale` sB !+! (1 - beta2) `_scale` (dB.^2))
 
         f3 :: (Matrix Float, Vector Float)
            -> Gradients Float
            -> (Matrix Float, Vector Float)
         f3 (vW, vB) (Gradients dW dB) =
-          ( compute $ beta1 `_scale` vW .+ (1 - beta1) `_scale` dW
-          , compute $ beta1 `_scale` vB .+ (1 - beta1) `_scale` dB)
+          ( compute $ beta1 `_scale` vW !+! (1 - beta1) `_scale` dW
+          , compute $ beta1 `_scale` vB !+! (1 - beta1) `_scale` dB)
 
 -- | Generate random weights and biases
 genWeights
@@ -358,7 +360,7 @@ genNetwork nodes activations = do
     weights <- Prelude.mapM genWeights nodes'
     return (zipWith (\(w, b) a -> Layer w b a) weights activations)
   where
-    nodes' = zip nodes (tail nodes)
+    nodes' = zip nodes (Prelude.tail nodes)
 
 -- | Perform a binary classification
 inferBinary
@@ -378,5 +380,5 @@ accuracy
 accuracy net (dta, tgt) = 100 * (1 - e / m)
   where
     pred = net `inferBinary` dta
-    e = A.sum $ abs (tgt .- pred)
+    e = A.sum $ A.absA (tgt !-! pred)
     m = fromIntegral $ rows tgt

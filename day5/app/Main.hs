@@ -1,8 +1,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DataKinds #-}
 
-import           Data.Massiv.Array hiding ( map, zip, unzip, zipWith, mapM_ )
-import qualified Data.Massiv.Array as A
+import           Data.Massiv.Array hiding (Matrix, map, zip, unzip, zipWith, mapM_ )
+import qualified Data.Massiv.Array as A hiding (Matrix)
 import qualified Data.Massiv.Array.Manifest.Vector as A
 -- import qualified Data.Massiv.Array.IO as A
 -- import           Graphics.ColorSpace
